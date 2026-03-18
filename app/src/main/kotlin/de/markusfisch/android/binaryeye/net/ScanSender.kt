@@ -13,6 +13,12 @@ import java.io.InputStreamReader
 import java.net.HttpURLConnection
 import java.net.ProtocolException
 import java.net.URL
+import java.security.SecureRandom
+import java.security.cert.X509Certificate
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
 
 fun Scan.sendAsync(
 	url: String,
@@ -87,6 +93,16 @@ private fun Scan.getMap(): Map<String, String> = mapOf(
 private fun Map<String, String?>.filterNullValues() =
 	filterValues { it != null }.mapValues { it.value as String }
 
+private val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+	override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+	override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+	override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+})
+
+private val trustAllSslContext: SSLContext = SSLContext.getInstance("TLS").apply {
+	init(null, trustAllCerts, SecureRandom())
+}
+
 private fun request(
 	url: String,
 	writer: ((HttpURLConnection) -> Any)? = null
@@ -94,6 +110,10 @@ private fun request(
 	var con: HttpURLConnection? = null
 	return try {
 		con = URL(url).openConnection() as HttpURLConnection
+		if (con is HttpsURLConnection) {
+			con.sslSocketFactory = trustAllSslContext.socketFactory
+			con.hostnameVerifier = javax.net.ssl.HostnameVerifier { _, _ -> true }
+		}
 		con.connectTimeout = 5000
 		writer?.invoke(con)
 		val body = con.inputStream.readHead()
